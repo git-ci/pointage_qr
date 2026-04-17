@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copier ces permissions dans android/app/src/main/AndroidManifest.xml
+     DANS le bloc <manifest> AVANT <application> -->
+
+<!--
+    PERMISSIONS REQUISES :
+    - INTERNET : appels API
+    - ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION : GPS
+-->
+
+<!-- À ajouter dans AndroidManifest.xml -->
+<!--
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+-->
+
+<!-- Pour iOS (ios/Runner/Info.plist), ajouter :
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Utilisé pour configurer les coordonnées GPS du terminal de pointage.</string>
+<key>NSLocationAlwaysUsageDescription</key>
+<string>Utilisé pour configurer les coordonnées GPS du terminal de pointage.</string>
+-->

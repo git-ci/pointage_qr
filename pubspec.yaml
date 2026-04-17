@@ -1,0 +1,46 @@
+name: pointage_qr
+description: PointageQr — Système de pointage par QR code
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP
+  http: ^1.2.0
+
+  # Stockage local (URL API + token + site configuré)
+  shared_preferences: ^2.2.2
+
+  # Géolocalisation
+  geolocator: ^11.0.0
+
+  # Icônes Material
+  cupertino_icons: ^1.0.6
+
+  # URL launcher (ouvrir Google Maps)
+  url_launcher: ^6.2.5
+
+  # Génération QR code
+  qr_flutter: ^4.1.0
+
+  # Vérification connectivité réseau
+  connectivity_plus: ^6.0.3
+
+  # Identifiant unique de l'appareil (androidId / identifierForVendor)
+  device_info_plus: ^10.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
