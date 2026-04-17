@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/app_logo.dart';
 import 'dashboard_screen.dart';
-import 'api_setup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -220,19 +219,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 16),
-
-                    // Modifier l'URL
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                            builder: (_) => const ApiSetupScreen()),
-                      ),
-                      child: const Text(
-                        '⚙️ Modifier l\'URL du serveur',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ),
 
                     // Note
                     Container(

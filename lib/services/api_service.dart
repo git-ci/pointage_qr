@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/app_config.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -11,27 +12,13 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const _keyApiUrl = 'api_url';
   static const _keyToken = 'auth_token';
 
   // ── URL de base ────────────────────────────────────────────────────────────
 
-  static Future<String?> getApiUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyApiUrl);
-  }
-
-  static Future<void> saveApiUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    final clean = url.trim().replaceAll(RegExp(r'/+$'), '');
-    await prefs.setString(_keyApiUrl, clean);
-  }
-
-  static Future<String> _base() async {
-    final url = await getApiUrl();
-    if (url == null || url.isEmpty)
-      throw ApiException('URL API non configurée.');
-    return '$url/api/v1';
+  static String _base() {
+    final clean = AppConfig.apiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    return '$clean/api/v1';
   }
 
   // ── Token ──────────────────────────────────────────────────────────────────
@@ -58,7 +45,7 @@ class ApiService {
     String endpoint, {
     Map<String, dynamic>? body,
   }) async {
-    final base = await _base();
+    final base = _base();
     final token = await getToken();
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -147,21 +134,6 @@ class ApiService {
       int id, Map<String, dynamic> payload) async {
     return await request('PUT', '/sites/$id', body: payload)
         as Map<String, dynamic>;
-  }
-
-  // ── Test de connexion ──────────────────────────────────────────────────────
-
-  static Future<bool> testConnection(String url) async {
-    try {
-      final clean = url.trim().replaceAll(RegExp(r'/+$'), '');
-      final uri = Uri.parse('$clean/api/v1/setup/status');
-      final resp = await http.get(uri, headers: {
-        'Accept': 'application/json'
-      }).timeout(const Duration(seconds: 10));
-      return resp.statusCode < 500;
-    } catch (_) {
-      return false;
-    }
   }
 
   // ── Device binding ────────────────────────────────────────────────────────

@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'models/site.dart';
-import 'screens/api_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/terminal_screen.dart';
 import 'services/api_service.dart';
@@ -38,9 +36,8 @@ class TerminalSetupApp extends StatelessWidget {
 }
 
 /// Logique de routage au démarrage :
-/// 1. Pas d'URL API               → ApiSetupScreen
-/// 2. Site configuré + même device → TerminalScreen (relancement direct)
-/// 3. Sinon                        → LoginScreen
+/// 1. Site configuré + même device → TerminalScreen (relancement direct)
+/// 2. Sinon                        → LoginScreen
 class SplashRouter extends StatefulWidget {
   const SplashRouter({super.key});
 
@@ -56,15 +53,6 @@ class _SplashRouterState extends State<SplashRouter> {
   }
 
   Future<void> _route() async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiUrl = prefs.getString('api_url');
-
-    // Pas d'URL → configuration initiale
-    if (apiUrl == null || apiUrl.isEmpty) {
-      _go(const ApiSetupScreen());
-      return;
-    }
-
     // Récupérer le site sauvegardé localement
     final siteJson = await DeviceService.getTerminalSite();
     if (siteJson == null) {

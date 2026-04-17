@@ -4,12 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../config/app_config.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/site.dart';
 import '../widgets/app_logo.dart';
-import 'api_setup_screen.dart';
 import 'login_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,8 +217,7 @@ class _TerminalScreenState extends State<TerminalScreen>
   }
 
   Future<void> _checkApi() async {
-    final apiUrl = await ApiService.getApiUrl();
-    if (apiUrl == null) return;
+    final apiUrl = AppConfig.apiBaseUrl;
     try {
       final res = await http.get(Uri.parse('$apiUrl/api/v1/setup/status'),
           headers: {
@@ -254,15 +252,7 @@ class _TerminalScreenState extends State<TerminalScreen>
       return;
     }
 
-    final apiUrl = await ApiService.getApiUrl();
-    if (apiUrl == null) {
-      if (mounted)
-        setState(() {
-          _loadingQr = false;
-          _qrError = 'URL du serveur non configurée.';
-        });
-      return;
-    }
+    final apiUrl = AppConfig.apiBaseUrl;
 
     try {
       final res = await http.get(
@@ -328,11 +318,11 @@ class _TerminalScreenState extends State<TerminalScreen>
       barrierDismissible: false,
       builder: (_) => _ResetDialog(
         onConfirmed: () async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear(); // Efface URL API + token
+          await ApiService.clearToken();
+          await DeviceService.clearTerminalSite();
           if (!mounted) return;
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const ApiSetupScreen()),
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
             (_) => false,
           );
         },
