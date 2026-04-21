@@ -5,5 +5,5 @@ class AppConfig {
   /// Exemples :
   ///   'http://192.168.1.10:8000'
   ///   'https://monserveur.monentreprise.com'
-  static const String apiBaseUrl = 'https://hrcontratpro.git-ci.com';
+  static const String apiBaseUrl = 'http://192.168.1.5:8000';
 }

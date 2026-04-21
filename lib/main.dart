@@ -101,7 +101,7 @@ class _SplashRouterState extends State<SplashRouter> {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: Color(0xFF1a2540),
-      body: const Center(
+      body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
