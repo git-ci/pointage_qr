@@ -47,13 +47,20 @@ class _TerminalScreenState extends State<TerminalScreen>
   String _dateText = '';
   Timer? _clockTimer;
 
-  // ── Blocage horaire ───────────────────────────────────────────────────────
-  bool _isBlocked = false;
+  // ── Mode et blocage horaire ────────────────────────────────────────────────
+  String _mode = 'checkin'; // 'checkin' ou 'checkout'
+  bool _isCheckinBlocked = false;
+  bool _isCheckoutBlocked = false;
+  bool _earlyDepartureActive = false; // départ anticipé confirmé
+  bool get _isBlocked => _mode == 'checkin'
+      ? _isCheckinBlocked
+      : (_isCheckoutBlocked && !_earlyDepartureActive);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _autoSelectMode();
     _startClock();
     _checkDeviceAuthorization();
   }
@@ -68,6 +75,112 @@ class _TerminalScreenState extends State<TerminalScreen>
     super.dispose();
   }
 
+  // ── Sélection automatique du mode selon l'heure ──────────────────────────
+  void _autoSelectMode() {
+    final now = DateTime.now();
+    final nowMins = now.hour * 60 + now.minute;
+
+    final csParts = widget.site.checkoutStart.split(':');
+    final csMins = (int.tryParse(csParts[0]) ?? 17) * 60 +
+        (int.tryParse(csParts.length > 1 ? csParts[1] : '0') ?? 0);
+
+    final dParts = widget.site.checkinDeadline.split(':');
+    final dlMins = (int.tryParse(dParts[0]) ?? 10) * 60 +
+        (int.tryParse(dParts.length > 1 ? dParts[1] : '0') ?? 0);
+
+    final rstMins = _resetHour * 60 + _resetMin;
+
+    final checkinBlocked = nowMins >= dlMins || nowMins < rstMins;
+    final checkoutBlocked = nowMins >= rstMins && nowMins < csMins;
+
+    // Basculer sur départ si :
+    // - après l'heure de départ, OU avant 5h30 (nuit),
+    // - OU arrivée fermée et départ déjà ouvert
+    if (nowMins >= csMins || nowMins < rstMins ||
+        (checkinBlocked && !checkoutBlocked)) {
+      _mode = 'checkout';
+    }
+  }
+
+  void _switchMode(String newMode) {
+    if (newMode == _mode) return;
+    setState(() {
+      _mode = newMode;
+      _earlyDepartureActive = false;
+    });
+    final blocked =
+        newMode == 'checkin' ? _isCheckinBlocked : _isCheckoutBlocked;
+    if (!blocked) {
+      _fetchQr();
+    } else {
+      _qrTimer?.cancel();
+      setState(() {
+        _scanUrl = null;
+        _loadingQr = false;
+        _qrError = null;
+      });
+    }
+  }
+
+  // ── Départ anticipé : confirmation avant d'afficher le QR ─────────────────
+  void _confirmEarlyDeparture() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFfd7e14)),
+            SizedBox(width: 10),
+            Text('Départ anticipé',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFfff3bf),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFffd43b)),
+              ),
+              child: Text(
+                'Il n\'est pas encore l\'heure officielle de départ '
+                '(${widget.site.checkoutStart}).\n\n'
+                'Voulez-vous quand même générer le QR de départ ?',
+                style: const TextStyle(
+                    fontSize: 13, height: 1.5, color: Color(0xFF7a5000)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() => _earlyDepartureActive = true);
+              _fetchQr();
+            },
+            icon: const Icon(Icons.logout_rounded, size: 16),
+            label: const Text('Oui, partir maintenant'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFfd7e14),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Horloge en temps réel ─────────────────────────────────────────────────
   void _startClock() {
     _updateClock();
@@ -77,7 +190,10 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   // Heures de réactivation du QR (5h30)
   static const int _resetHour = 5;
-  static const int _resetMin = 30;
+  static const int _resetMin  = 30;
+  // Fermeture du pointage départ (22h30)
+  static const int _checkoutCloseHour = 22;
+  static const int _checkoutCloseMin  = 30;
 
   void _updateClock() {
     final now = DateTime.now();
@@ -109,30 +225,55 @@ class _TerminalScreenState extends State<TerminalScreen>
     final day = weekdays[now.weekday - 1];
     final date = '$day ${now.day} ${months[now.month - 1]} ${now.year}';
 
-    // Deadline depuis le site
-    final deadline = widget.site.checkinDeadline;
-    final dParts = deadline.split(':');
-    final dlHour = int.tryParse(dParts[0]) ?? 10;
-    final dlMin = int.tryParse(dParts.length > 1 ? dParts[1] : '0') ?? 0;
     final nowMins = now.hour * 60 + now.minute;
-    final dlMins = dlHour * 60 + dlMin;
     final rstMins = _resetHour * 60 + _resetMin; // 5h30 = 330 min
 
-    // Fenêtre de blocage : [dlMins..23h59] + [0h00..rstMins[
-    // = nowMins >= dlMins  OU  nowMins < rstMins
-    final newBlocked = (nowMins >= dlMins) || (nowMins < rstMins);
-    final wasBlocked = _isBlocked;
+    // Blocage arrivée : après deadline OU avant réactivation 5h30
+    final dParts = widget.site.checkinDeadline.split(':');
+    final dlMins = (int.tryParse(dParts[0]) ?? 10) * 60 +
+        (int.tryParse(dParts.length > 1 ? dParts[1] : '0') ?? 0);
+    final newCheckinBlocked = nowMins >= dlMins || nowMins < rstMins;
+
+    // Blocage départ : avant checkoutStart OU après 22h30
+    final csParts = widget.site.checkoutStart.split(':');
+    final csMins = (int.tryParse(csParts[0]) ?? 17) * 60 +
+        (int.tryParse(csParts.length > 1 ? csParts[1] : '0') ?? 0);
+    const ccMins = _checkoutCloseHour * 60 + _checkoutCloseMin; // 22h30 = 1350
+    final newCheckoutBlocked =
+        (nowMins >= rstMins && nowMins < csMins) || nowMins >= ccMins;
+
+    final wasCurrentBlocked = _isBlocked;
+    final newCurrentBlocked =
+        _mode == 'checkin' ? newCheckinBlocked : newCheckoutBlocked;
 
     if (mounted) {
       setState(() {
         _clockText = '$h:$m';
         _dateText = date;
-        _isBlocked = newBlocked;
+        _isCheckinBlocked = newCheckinBlocked;
+        _isCheckoutBlocked = newCheckoutBlocked;
+        // Si le checkout s'est naturellement débloqué, annuler le départ anticipé
+        if (!newCheckoutBlocked) _earlyDepartureActive = false;
       });
-      if (!wasBlocked && newBlocked) {
-        _qrTimer?.cancel(); // Vient de se bloquer
-      } else if (wasBlocked && !newBlocked) {
-        _fetchQr(); // Vient de se débloquer → relancer le QR
+      if (!wasCurrentBlocked && newCurrentBlocked) {
+        // Arrivée vient de se fermer et départ est ouvert → basculer auto
+        if (_mode == 'checkin' && !newCheckoutBlocked) {
+          setState(() {
+            _mode = 'checkout';
+            _earlyDepartureActive = false;
+          });
+          _fetchQr();
+        } else {
+          _qrTimer?.cancel();
+          setState(() {
+            _scanUrl = null;
+            _loadingQr = false;
+            _qrError = null;
+            _countdown = 90;
+          });
+        }
+      } else if (wasCurrentBlocked && !newCurrentBlocked) {
+        _fetchQr(); // Mode actuel vient de se débloquer → relancer le QR
       }
     }
   }
@@ -231,6 +372,7 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   // ── Génération du QR ──────────────────────────────────────────────────────
   Future<void> _fetchQr() async {
+    if (_isBlocked) return; // Ne pas générer si le pointage est fermé
     _qrTimer?.cancel();
     if (mounted)
       setState(() {
@@ -256,7 +398,8 @@ class _TerminalScreenState extends State<TerminalScreen>
 
     try {
       final res = await http.get(
-        Uri.parse('$apiUrl/api/v1/qr/generate?site_id=${widget.site.id}'),
+        Uri.parse(
+            '$apiUrl/api/v1/qr/generate?site_id=${widget.site.id}&type=$_mode'),
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 10));
 
@@ -492,6 +635,16 @@ class _TerminalScreenState extends State<TerminalScreen>
 
                       const SizedBox(height: 20),
 
+                      // ── Sélecteur de mode ─────────────────────────────────
+                      _ModeSelector(
+                        mode: _mode,
+                        onChanged: _switchMode,
+                        isCheckinBlocked: _isCheckinBlocked,
+                        isCheckoutBlocked: _isCheckoutBlocked,
+                      ),
+
+                      const SizedBox(height: 16),
+
                       // ── Cadre QR ─────────────────────────────────────────
                       _QrFrame(
                         loading: _loadingQr,
@@ -500,16 +653,26 @@ class _TerminalScreenState extends State<TerminalScreen>
                         countdown: _countdown,
                         onRetry: _fetchQr,
                         isBlocked: _isBlocked,
+                        mode: _mode,
                         checkinDeadline: widget.site.checkinDeadline,
+                        checkoutStart: widget.site.checkoutStart,
+                        checkoutCloseTime: '22:30',
+                        onEarlyDeparture: (_mode == 'checkout' &&
+                                _isCheckoutBlocked &&
+                                !_earlyDepartureActive)
+                            ? _confirmEarlyDeparture
+                            : null,
                       ),
 
                       const SizedBox(height: 16),
 
                       // Instruction
                       if (_scanUrl != null && !_loadingQr) ...[
-                        const Text(
-                          'Scannez ce QR code avec votre téléphone\npour enregistrer votre présence.',
-                          style: TextStyle(
+                        Text(
+                          _mode == 'checkin'
+                              ? 'Scannez ce QR code avec votre téléphone\npour enregistrer votre arrivée.'
+                              : 'Scannez ce QR code avec votre téléphone\npour enregistrer votre départ.',
+                          style: const TextStyle(
                             fontSize: 14,
                             color: Colors.white70,
                             height: 1.6,
@@ -556,7 +719,11 @@ class _QrFrame extends StatelessWidget {
   final int countdown;
   final VoidCallback onRetry;
   final bool isBlocked;
+  final String mode;
   final String checkinDeadline;
+  final String checkoutStart;
+  final String checkoutCloseTime;
+  final VoidCallback? onEarlyDeparture;
 
   const _QrFrame({
     required this.loading,
@@ -565,7 +732,11 @@ class _QrFrame extends StatelessWidget {
     required this.countdown,
     required this.onRetry,
     this.isBlocked = false,
+    this.mode = 'checkin',
     this.checkinDeadline = '10:00',
+    this.checkoutStart = '17:00',
+    this.checkoutCloseTime = '22:30',
+    this.onEarlyDeparture,
   });
 
   @override
@@ -588,7 +759,6 @@ class _QrFrame extends StatelessWidget {
           // QR ou état
           SizedBox(
             width: 260,
-            height: 260,
             child: _buildQrContent(),
           ),
 
@@ -641,40 +811,71 @@ class _QrFrame extends StatelessWidget {
   Widget _buildQrContent() {
     // ── État BLOQUÉ ──────────────────────────────────────────────────────────
     if (isBlocked) {
+      final isCheckin = mode == 'checkin';
+
+      // Pour le départ : distinguer "pas encore ouvert" vs "fermé pour la nuit"
+      final now = DateTime.now();
+      final nowMins = now.hour * 60 + now.minute;
+      final ccParts = checkoutCloseTime.split(':');
+      final ccMins = (int.tryParse(ccParts[0]) ?? 22) * 60 +
+          (int.tryParse(ccParts.length > 1 ? ccParts[1] : '0') ?? 30);
+      final checkoutNightClosed = !isCheckin && nowMins >= ccMins;
+
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('⛔', style: TextStyle(fontSize: 48)),
+          Text(
+            isCheckin ? '⛔' : (checkoutNightClosed ? '🌙' : '🕐'),
+            style: const TextStyle(fontSize: 48),
+          ),
           const SizedBox(height: 12),
-          const Text(
-            'Pointage fermé',
+          Text(
+            isCheckin
+                ? 'Pointage d\'arrivée fermé'
+                : (checkoutNightClosed
+                    ? 'Pointage de départ fermé'
+                    : 'Pointage de départ pas encore ouvert'),
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: Color(0xFFc92a2a),
+              color: isCheckin
+                  ? const Color(0xFFc92a2a)
+                  : const Color(0xFF995200),
             ),
           ),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFFffe3e3),
+              color: isCheckin
+                  ? const Color(0xFFffe3e3)
+                  : const Color(0xFFffe8cc),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              '🕐 Heure limite : $checkinDeadline',
-              style: const TextStyle(
+              isCheckin
+                  ? '🕐 Heure limite : $checkinDeadline'
+                  : (checkoutNightClosed
+                      ? '🌙 Fermeture : $checkoutCloseTime'
+                      : '🕐 Disponible à partir de : $checkoutStart'),
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFFc92a2a),
+                color: isCheckin
+                    ? const Color(0xFFc92a2a)
+                    : const Color(0xFF995200),
               ),
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'L\'heure de pointage est dépassée.\nLe QR sera disponible à nouveau demain.',
-            style:
-                TextStyle(fontSize: 11, color: Color(0xFF868e96), height: 1.6),
+          Text(
+            isCheckin
+                ? 'L\'heure de pointage est dépassée.\nLe QR sera disponible à nouveau demain.'
+                : (checkoutNightClosed
+                    ? 'Le pointage de départ est fermé après $checkoutCloseTime.\nDisponible à nouveau demain à $checkoutStart.'
+                    : 'Le QR de départ sera disponible\nà partir de $checkoutStart.'),
+            style: const TextStyle(
+                fontSize: 11, color: Color(0xFF868e96), height: 1.6),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
@@ -684,15 +885,43 @@ class _QrFrame extends StatelessWidget {
               color: const Color(0xFFe7f5ff),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text(
-              '🔄 Réactivation à 05:30',
-              style: TextStyle(
+            child: Text(
+              isCheckin
+                  ? '🔄 Réactivation à 05:30'
+                  : (checkoutNightClosed
+                      ? '🔄 Réactivation demain à $checkoutStart'
+                      : '🔄 Disponible à $checkoutStart'),
+              style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF1971c2),
               ),
             ),
           ),
+          // Bouton départ anticipé (checkout uniquement)
+          if (!isCheckin && onEarlyDeparture != null) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: Color(0xFFe9ecef)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onEarlyDeparture,
+                icon: const Icon(Icons.logout_rounded, size: 16),
+                label: const Text(
+                  'Je veux partir maintenant',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFfd7e14),
+                  side: const BorderSide(color: Color(0xFFfd7e14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+          ],
         ],
       );
     }
@@ -750,6 +979,122 @@ class _QrFrame extends StatelessWidget {
     }
 
     return const SizedBox.shrink();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Widget : Sélecteur de mode Arrivée / Départ
+// ─────────────────────────────────────────────────────────────────────────────
+class _ModeSelector extends StatelessWidget {
+  final String mode;
+  final ValueChanged<String> onChanged;
+  final bool isCheckinBlocked;
+  final bool isCheckoutBlocked;
+
+  const _ModeSelector({
+    required this.mode,
+    required this.onChanged,
+    required this.isCheckinBlocked,
+    required this.isCheckoutBlocked,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.15)),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ModeButton(
+            label: 'Arrivée',
+            icon: Icons.login_rounded,
+            active: mode == 'checkin',
+            blocked: isCheckinBlocked,
+            onTap: () => onChanged('checkin'),
+            activeColor: const Color(0xFF40c057),
+          ),
+          const SizedBox(width: 4),
+          _ModeButton(
+            label: 'Départ',
+            icon: Icons.logout_rounded,
+            active: mode == 'checkout',
+            blocked: isCheckoutBlocked,
+            onTap: () => onChanged('checkout'),
+            activeColor: const Color(0xFFfd7e14),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final bool blocked;
+  final VoidCallback onTap;
+  final Color activeColor;
+
+  const _ModeButton({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.blocked,
+    required this.onTap,
+    required this.activeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? activeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: active ? Colors.white : Colors.white54,
+            ),
+            const SizedBox(width: 8),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: active ? Colors.white : Colors.white54,
+                  ),
+                ),
+                Text(
+                  blocked ? 'Fermé' : 'Ouvert',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: active ? Colors.white70 : Colors.white38,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

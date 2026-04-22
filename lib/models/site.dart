@@ -14,6 +14,7 @@ class Site {
   final String? deviceLabel;
   final bool deviceBound;
   final String checkinDeadline; // Format "HH:MM", défaut "10:00"
+  final String checkoutStart;   // Format "HH:MM", défaut "17:00"
 
   Site({
     required this.id,
@@ -31,6 +32,7 @@ class Site {
     this.deviceLabel,
     required this.deviceBound,
     this.checkinDeadline = '10:00',
+    this.checkoutStart = '17:00',
   });
 
   factory Site.fromJson(Map<String, dynamic> json) {
@@ -54,6 +56,7 @@ class Site {
       deviceLabel: json['device_label'] as String?,
       deviceBound: json['device_bound'] as bool? ?? false,
       checkinDeadline: json['checkin_deadline'] as String? ?? '10:00',
+      checkoutStart: json['checkout_start'] as String? ?? '17:00',
     );
   }
 }

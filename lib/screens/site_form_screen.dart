@@ -23,6 +23,7 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
   final _lngCtrl = TextEditingController();
   final _radiusCtrl = TextEditingController(text: '50');
   final _deadlineCtrl = TextEditingController(text: '10:00');
+  final _checkoutStartCtrl = TextEditingController(text: '17:00');
 
   bool _loading = false;
   bool _gpsExpanded = false;
@@ -46,6 +47,7 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
       _lngCtrl.text = s.longitude != null ? s.longitude!.toString() : '';
       _radiusCtrl.text = s.radiusMeters.toString();
       _deadlineCtrl.text = s.checkinDeadline;
+      _checkoutStartCtrl.text = s.checkoutStart;
     }
     _latCtrl.addListener(_onLatChanged);
   }
@@ -59,6 +61,7 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
     _lngCtrl.dispose();
     _radiusCtrl.dispose();
     _deadlineCtrl.dispose();
+    _checkoutStartCtrl.dispose();
     super.dispose();
   }
 
@@ -212,6 +215,9 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
     final radius = int.tryParse(_radiusCtrl.text.trim()) ?? 50;
     final deadline =
         _deadlineCtrl.text.trim().isEmpty ? '10:00' : _deadlineCtrl.text.trim();
+    final checkoutStart = _checkoutStartCtrl.text.trim().isEmpty
+        ? '17:00'
+        : _checkoutStartCtrl.text.trim();
 
     if ((lat != null && lng == null) || (lng != null && lat == null)) {
       setState(() {
@@ -231,6 +237,7 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
       'longitude': lng,
       'radius_meters': radius,
       'checkin_deadline': deadline,
+      'checkout_start': checkoutStart,
     };
 
     try {
@@ -410,6 +417,39 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
               const SizedBox(height: 4),
               Text(
                 'Après cette heure, le pointage QR est refusé pour ce terminal.',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Heure d'ouverture du pointage départ
+              _label('🚪 Heure de départ — défaut 17:00'),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: _checkoutStartCtrl,
+                keyboardType: TextInputType.datetime,
+                decoration: _inputDeco(
+                  hint: '17:00',
+                  icon: const Icon(Icons.exit_to_app,
+                      size: 18, color: Colors.grey),
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return null;
+                  final parts = v.split(':');
+                  if (parts.length != 2) {
+                    return 'Format HH:MM requis (ex: 17:00).';
+                  }
+                  final h = int.tryParse(parts[0]);
+                  final m = int.tryParse(parts[1]);
+                  if (h == null || m == null || h > 23 || m > 59) {
+                    return 'Heure invalide.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'À partir de cette heure, le QR de départ devient disponible.',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
               ),
 
