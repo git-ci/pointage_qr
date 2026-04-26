@@ -6,5 +6,5 @@ class AppConfig {
   ///   'http://192.168.1.10:8000'
   ///   'https://monserveur.monentreprise.com'
   static const String apiBaseUrl = 'http://192.168.100.3:8000';
-  //static const String apiBaseUrl = 'https://hrcontratpro.git-ci.com';
+  // static const String apiBaseUrl = 'https://hrcontratpro.git-ci.com';
 }
