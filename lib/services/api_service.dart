@@ -163,4 +163,9 @@ class ApiService {
   static Future<Map<String, dynamic>> deleteSite(int id) async {
     return await request('DELETE', '/sites/$id') as Map<String, dynamic>;
   }
+
+  // ── Annonces ──────────────────────────────────────────────────────────────
+
+  static Future<List<dynamic>> getAnnouncements() async =>
+      await request('GET', '/announcements') as List<dynamic>;
 }

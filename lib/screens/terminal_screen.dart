@@ -47,6 +47,12 @@ class _TerminalScreenState extends State<TerminalScreen>
   String _dateText = '';
   Timer? _clockTimer;
 
+  // ── Annonces ─────────────────────────────────────────────────────────────
+  List<Map<String, dynamic>> _bannerAnns = [];
+  int _bannerIdx = 0;
+  int _bannerRunId = 0;
+  Timer? _bannerPollTimer;
+
   // ── Mode et blocage horaire ────────────────────────────────────────────────
   String _mode = 'checkin'; // 'checkin' ou 'checkout'
   bool _isCheckinBlocked = false;
@@ -63,6 +69,9 @@ class _TerminalScreenState extends State<TerminalScreen>
     _autoSelectMode();
     _startClock();
     _checkDeviceAuthorization();
+    _loadBannerAnnouncements();
+    _bannerPollTimer = Timer.periodic(
+      const Duration(minutes: 2), (_) => _loadBannerAnnouncements());
   }
 
   @override
@@ -72,7 +81,19 @@ class _TerminalScreenState extends State<TerminalScreen>
     _clockTimer?.cancel();
     _connectTimer?.cancel();
     _connectSub?.cancel();
+    _bannerPollTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadBannerAnnouncements() async {
+    try {
+      final data = await ApiService.getAnnouncements();
+      if (!mounted) return;
+      setState(() {
+        _bannerAnns = List<Map<String, dynamic>>.from(data);
+        if (_bannerIdx >= _bannerAnns.length) _bannerIdx = 0;
+      });
+    } catch (_) {}
   }
 
   // ── Sélection automatique du mode selon l'heure ──────────────────────────
@@ -88,7 +109,7 @@ class _TerminalScreenState extends State<TerminalScreen>
     final dlMins = (int.tryParse(dParts[0]) ?? 10) * 60 +
         (int.tryParse(dParts.length > 1 ? dParts[1] : '0') ?? 0);
 
-    final rstMins = _resetHour * 60 + _resetMin;
+    const rstMins = _resetHour * 60 + _resetMin;
 
     final checkinBlocked = nowMins >= dlMins || nowMins < rstMins;
     final checkoutBlocked = nowMins >= rstMins && nowMins < csMins;
@@ -96,7 +117,8 @@ class _TerminalScreenState extends State<TerminalScreen>
     // Basculer sur départ si :
     // - après l'heure de départ, OU avant 5h30 (nuit),
     // - OU arrivée fermée et départ déjà ouvert
-    if (nowMins >= csMins || nowMins < rstMins ||
+    if (nowMins >= csMins ||
+        nowMins < rstMins ||
         (checkinBlocked && !checkoutBlocked)) {
       _mode = 'checkout';
     }
@@ -190,10 +212,10 @@ class _TerminalScreenState extends State<TerminalScreen>
 
   // Heures de réactivation du QR (5h30)
   static const int _resetHour = 5;
-  static const int _resetMin  = 30;
+  static const int _resetMin = 30;
   // Fermeture du pointage départ (22h30)
   static const int _checkoutCloseHour = 22;
-  static const int _checkoutCloseMin  = 30;
+  static const int _checkoutCloseMin = 30;
 
   void _updateClock() {
     final now = DateTime.now();
@@ -226,7 +248,7 @@ class _TerminalScreenState extends State<TerminalScreen>
     final date = '$day ${now.day} ${months[now.month - 1]} ${now.year}';
 
     final nowMins = now.hour * 60 + now.minute;
-    final rstMins = _resetHour * 60 + _resetMin; // 5h30 = 330 min
+    const rstMins = _resetHour * 60 + _resetMin; // 5h30 = 330 min
 
     // Blocage arrivée : après deadline OU avant réactivation 5h30
     final dParts = widget.site.checkinDeadline.split(':');
@@ -358,7 +380,7 @@ class _TerminalScreenState extends State<TerminalScreen>
   }
 
   Future<void> _checkApi() async {
-    final apiUrl = AppConfig.apiBaseUrl;
+    const apiUrl = AppConfig.apiBaseUrl;
     try {
       final res = await http.get(Uri.parse('$apiUrl/api/v1/setup/status'),
           headers: {
@@ -374,27 +396,29 @@ class _TerminalScreenState extends State<TerminalScreen>
   Future<void> _fetchQr() async {
     if (_isBlocked) return; // Ne pas générer si le pointage est fermé
     _qrTimer?.cancel();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _loadingQr = true;
         _qrError = null;
       });
+    }
 
     // Vérifier connectivité basique
     final results = await Connectivity().checkConnectivity();
     final online = results.any((r) => r != ConnectivityResult.none);
     if (!online) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loadingQr = false;
           _hasInternet = false;
           _qrError =
               'Pas de connexion Internet.\nVérifiez le Wi-Fi ou les données mobiles.';
         });
+      }
       return;
     }
 
-    final apiUrl = AppConfig.apiBaseUrl;
+    const apiUrl = AppConfig.apiBaseUrl;
 
     try {
       final res = await http.get(
@@ -416,7 +440,7 @@ class _TerminalScreenState extends State<TerminalScreen>
           '?payload=${Uri.encodeComponent(payload)}'
           '&sig=${Uri.encodeComponent(signature)}';
 
-      if (mounted)
+      if (mounted) {
         setState(() {
           _scanUrl = scanUrl;
           _loadingQr = false;
@@ -424,16 +448,18 @@ class _TerminalScreenState extends State<TerminalScreen>
           _hasApi = true;
           _countdown = 90;
         });
+      }
 
       _startCountdown();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loadingQr = false;
           _hasApi = false;
           _qrError =
               'Impossible de contacter le serveur.\n${e.toString().replaceAll('Exception: ', '')}';
         });
+      }
       // Retry dans 10s
       _qrTimer = Timer(const Duration(seconds: 10), _fetchQr);
     }
@@ -632,6 +658,23 @@ class _TerminalScreenState extends State<TerminalScreen>
                         style: const TextStyle(
                             fontSize: 13, color: Colors.white54),
                       ),
+
+                      // ── Bandeau annonces ──────────────────────────────────
+                      if (_bannerAnns.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        _TerminalAnnouncementBanner(
+                          key: ValueKey(_bannerRunId),
+                          announcement: _bannerAnns[_bannerIdx],
+                          onComplete: () {
+                            if (mounted) {
+                              setState(() {
+                                _bannerIdx = (_bannerIdx + 1) % _bannerAnns.length;
+                                _bannerRunId++;
+                              });
+                            }
+                          },
+                        ),
+                      ],
 
                       const SizedBox(height: 20),
 
@@ -838,18 +881,16 @@ class _QrFrame extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: isCheckin
-                  ? const Color(0xFFc92a2a)
-                  : const Color(0xFF995200),
+              color:
+                  isCheckin ? const Color(0xFFc92a2a) : const Color(0xFF995200),
             ),
           ),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: isCheckin
-                  ? const Color(0xFFffe3e3)
-                  : const Color(0xFFffe8cc),
+              color:
+                  isCheckin ? const Color(0xFFffe3e3) : const Color(0xFFffe8cc),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1472,4 +1513,189 @@ class _ResetDialogState extends State<_ResetDialog> {
       isDense: true,
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bandeau d'annonce défilant — thème sombre pour le terminal
+// ─────────────────────────────────────────────────────────────────────────────
+class _TerminalAnnouncementBanner extends StatefulWidget {
+  final Map<String, dynamic> announcement;
+  final VoidCallback onComplete;
+
+  const _TerminalAnnouncementBanner({
+    super.key,
+    required this.announcement,
+    required this.onComplete,
+  });
+
+  @override
+  State<_TerminalAnnouncementBanner> createState() =>
+      _TerminalAnnouncementBannerState();
+}
+
+class _TerminalAnnouncementBannerState
+    extends State<_TerminalAnnouncementBanner> {
+  static const _bgColors = {
+    'info':     Color(0xFF1C3657),
+    'warning':  Color(0xFF4A3000),
+    'sanction': Color(0xFF3D1010),
+  };
+  static const _textColors = {
+    'info':     Color(0xFF74c0fc),
+    'warning':  Color(0xFFFFD43B),
+    'sanction': Color(0xFFFF8787),
+  };
+  static const _icons = {
+    'info': 'ℹ️', 'warning': '⚠️', 'sanction': '🚨',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final type   = (widget.announcement['type'] as String?) ?? 'info';
+    final bg     = _bgColors[type]    ?? _bgColors['info']!;
+    final tc     = _textColors[type]  ?? _textColors['info']!;
+    final icon   = _icons[type]       ?? 'ℹ️';
+    final sender = (widget.announcement['sender'] as Map?)?['name'] as String? ?? '';
+    final title  = (widget.announcement['title'] as String?) ?? '';
+    final body   = (widget.announcement['body']  as String?) ?? '';
+    final label  = title.isNotEmpty
+        ? '$title${body.isNotEmpty ? "  —  $body" : ""}'
+        : body;
+
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tc.withOpacity(0.35)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 14, height: 1)),
+          const SizedBox(width: 6),
+          if (sender.isNotEmpty)
+            Text(
+              '$sender : ',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: tc,
+                height: 1,
+              ),
+            ),
+          Expanded(
+            child: _TerminalMarquee(
+              text: label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: tc,
+              ),
+              onComplete: widget.onComplete,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Texte défilant pour le terminal ──────────────────────────────────────────
+class _TerminalMarquee extends StatefulWidget {
+  final String       text;
+  final TextStyle    style;
+  final VoidCallback onComplete;
+
+  const _TerminalMarquee({
+    required this.text,
+    required this.style,
+    required this.onComplete,
+  });
+
+  @override
+  State<_TerminalMarquee> createState() => _TerminalMarqueeState();
+}
+
+class _TerminalMarqueeState extends State<_TerminalMarquee>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  TextPainter? _tp;
+  double _textWidth = 0;
+  double _textHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this)
+      ..addStatusListener((s) {
+        if (s == AnimationStatus.completed && mounted) {
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) widget.onComplete();
+          });
+        }
+      });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _measure() {
+    if (!mounted) return;
+    final tp = TextPainter(
+      text: TextSpan(text: widget.text, style: widget.style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    _ctrl.duration = Duration(seconds: (tp.width / 55).clamp(8.0, 25.0).round());
+    setState(() {
+      _tp = tp;
+      _textWidth = tp.width;
+      _textHeight = tp.height;
+    });
+    _ctrl.forward();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_tp == null) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (_, constraints) {
+        final cw = constraints.maxWidth;
+        return AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) => CustomPaint(
+            painter: _TerminalMarqueePainter(
+              tp: _tp!,
+              dx: cw - _ctrl.value * (cw + _textWidth),
+              textHeight: _textHeight,
+            ),
+            size: Size(cw, _textHeight),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TerminalMarqueePainter extends CustomPainter {
+  final TextPainter tp;
+  final double dx;
+  final double textHeight;
+
+  _TerminalMarqueePainter({required this.tp, required this.dx, required this.textHeight});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
+    tp.paint(canvas, Offset(dx, (size.height - textHeight) / 2));
+  }
+
+  @override
+  bool shouldRepaint(_TerminalMarqueePainter old) => old.dx != dx;
 }

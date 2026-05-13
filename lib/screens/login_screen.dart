@@ -136,8 +136,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             size: 18, color: Colors.grey),
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty)
+                        if (v == null || v.trim().isEmpty) {
                           return 'Email obligatoire.';
+                        }
                         return null;
                       },
                     ),
@@ -167,8 +168,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       validator: (v) {
-                        if (v == null || v.isEmpty)
+                        if (v == null || v.isEmpty) {
                           return 'Mot de passe obligatoire.';
+                        }
                         return null;
                       },
                     ),
@@ -218,7 +220,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                       ),
                     ),
-
 
                     // Note
                     Container(

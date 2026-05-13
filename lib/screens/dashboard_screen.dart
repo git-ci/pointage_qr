@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import '../models/site.dart';
 import 'login_screen.dart';
 import 'site_form_screen.dart';
@@ -301,7 +302,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _openTerminal(Site site) {
+  Future<void> _openTerminal(Site site) async {
+    // Persister le site localement pour que le terminal redémarre sans login
+    final deviceId = await DeviceService.getDeviceId();
+    await DeviceService.saveTerminalSite({
+      'id': site.id,
+      'name': site.name,
+      'city': site.city,
+      'address': site.address,
+      'latitude': site.latitude,
+      'longitude': site.longitude,
+      'radius_meters': site.radiusMeters,
+      'active': site.active,
+      'gps_configured': site.gpsConfigured,
+      'terminal_url': site.terminalUrl,
+      'token': site.token,
+      'checkin_deadline': site.checkinDeadline,
+      'checkout_start': site.checkoutStart,
+      'device_id': deviceId,
+    });
+    if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => TerminalScreen(site: site)),
     );

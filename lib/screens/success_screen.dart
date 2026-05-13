@@ -4,7 +4,6 @@ import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/site.dart';
 import 'terminal_screen.dart';
-import 'login_screen.dart';
 
 class SuccessScreen extends StatefulWidget {
   final Site site;

@@ -384,8 +384,9 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
                 validator: (v) {
                   if (v == null || v.isEmpty) return null;
                   final n = int.tryParse(v);
-                  if (n == null || n < 10 || n > 500)
+                  if (n == null || n < 10 || n > 500) {
                     return 'Entre 10 et 500 mètres.';
+                  }
                   return null;
                 },
               ),
@@ -405,12 +406,14 @@ class _SiteFormScreenState extends State<SiteFormScreen> {
                 validator: (v) {
                   if (v == null || v.isEmpty) return null;
                   final parts = v.split(':');
-                  if (parts.length != 2)
+                  if (parts.length != 2) {
                     return 'Format HH:MM requis (ex: 10:00).';
+                  }
                   final h = int.tryParse(parts[0]);
                   final m = int.tryParse(parts[1]);
-                  if (h == null || m == null || h > 23 || m > 59)
+                  if (h == null || m == null || h > 23 || m > 59) {
                     return 'Heure invalide.';
+                  }
                   return null;
                 },
               ),

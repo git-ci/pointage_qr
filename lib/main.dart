@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'models/site.dart';
 import 'screens/login_screen.dart';
 import 'screens/terminal_screen.dart';
-import 'services/api_service.dart';
 import 'services/device_service.dart';
 import 'widgets/app_logo.dart';
 
@@ -53,41 +51,24 @@ class _SplashRouterState extends State<SplashRouter> {
   }
 
   Future<void> _route() async {
-    // Récupérer le site sauvegardé localement
+    // Site sauvegardé localement → lancer le terminal directement
     final siteJson = await DeviceService.getTerminalSite();
     if (siteJson == null) {
       _go(const LoginScreen());
       return;
     }
 
-    // Construire le site depuis le JSON local
-    Site? site;
+    Site site;
     try {
       site = Site.fromJson(Map<String, dynamic>.from(siteJson));
     } catch (_) {
-      // JSON corrompu → reset et demander reconnexion
+      // JSON corrompu → reset
       await DeviceService.clearTerminalSite();
       _go(const LoginScreen());
       return;
     }
 
-    // Récupérer l'ID de cet appareil
-    final deviceId = await DeviceService.getDeviceId();
-
-    try {
-      // Vérifier côté serveur que cet appareil est autorisé
-      final check = await ApiService.checkDevice(site.id, deviceId);
-      if (check['authorized'] == true) {
-        _go(TerminalScreen(site: site));
-        return;
-      }
-      // Appareil non autorisé → retour au login
-      _go(const LoginScreen());
-    } catch (_) {
-      // Serveur injoignable → lancer quand même le terminal en mode offline
-      // La bannière de connectivité s'affichera dans TerminalScreen
-      _go(TerminalScreen(site: site));
-    }
+    _go(TerminalScreen(site: site));
   }
 
   void _go(Widget screen) {
